@@ -17,22 +17,16 @@ USE_POSTGRES = os.environ.get("DATABASE_URL") is not None
 def get_db_connection():
     """Get database connection based on environment"""
     if USE_POSTGRES:
-        import psycopg2
-        return psycopg2.connect(os.environ.get("DATABASE_URL"))
+        try:
+            import psycopg2
+            return psycopg2.connect(os.environ.get("DATABASE_URL"))
+        except Exception as e:
+            print(f"PostgreSQL connection error: {e}")
+            raise
     else:
-        return sqlite3.connect("attendance.db")
-
-# ---------- DATABASE SETUP ----------
-def init_db():
-    conn = get_db_connection()
-    c = conn.cursor()
-
-    c.execute("""
-    CREATE TABLE IF NOT EXISTS admin(
-        username TEXT,
-        password TEXT
-    )
-    """)
+        # For local development, use /tmp or current directory
+        db_path = "/tmp/attendance.db" if os.path.exists("/tmp") else "attendance.db"
+        return sqlite3.connect(db_path)
 
 # ---------- DATABASE SETUP ----------
 def init_db():
@@ -376,24 +370,27 @@ def view():
     query = "SELECT * FROM attendance WHERE 1=1"
     params = []
     if selected_subject:
-        query += " AND subject=?"
+        if USE_POSTGRES:
+            query += " AND subject=%s"
+        else:
+            query += " AND subject=?"
         params.append(selected_subject)
     if selected_branch:
-        query += " AND branch=?"
+        if USE_POSTGRES:
+            query += " AND branch=%s"
+        else:
+            query += " AND branch=?"
         params.append(selected_branch)
     if selected_name:
-        query += " AND name LIKE ?"
+        if USE_POSTGRES:
+            query += " AND name LIKE %s"
+        else:
+            query += " AND name LIKE ?"
         params.append(f"%{selected_name}%")
-    if selected_month:
-        query += " AND strftime('%m', date)=?"
-        params.append(selected_month.zfill(2))
-    if selected_day:
-        query += " AND strftime('%d', date)=?"
-        params.append(selected_day.zfill(2))
     
     query += " ORDER BY date DESC, time DESC"
     
-    c.execute(query, params)
+    c.execute(query, tuple(params) if params else ())
     data = c.fetchall()
     conn.close()
 
@@ -422,7 +419,10 @@ def student_view():
     conn = get_db_connection()
     c = conn.cursor()
     # Fetch all records for the student to calculate correct stats regardless of filter
-    c.execute("SELECT * FROM attendance WHERE name=? ORDER BY date DESC, time DESC", (student_name,))
+    if USE_POSTGRES:
+        c.execute("SELECT * FROM attendance WHERE name=%s ORDER BY date DESC, time DESC", (student_name,))
+    else:
+        c.execute("SELECT * FROM attendance WHERE name=? ORDER BY date DESC, time DESC", (student_name,))
     all_data = c.fetchall()
     conn.close()
 
@@ -466,30 +466,58 @@ def manual_add():
 
     # Duplicate check similar to /scan
     if subj and branch and 'subject' in cols and 'branch' in cols:
-        c.execute("SELECT * FROM attendance WHERE roll=? AND date=? AND subject=? AND branch=?", (roll, date, subj, branch))
+        if USE_POSTGRES:
+            c.execute("SELECT * FROM attendance WHERE roll=%s AND date=%s AND subject=%s AND branch=%s", (roll, date, subj, branch))
+        else:
+            c.execute("SELECT * FROM attendance WHERE roll=? AND date=? AND subject=? AND branch=?", (roll, date, subj, branch))
     elif subj and 'subject' in cols:
-        c.execute("SELECT * FROM attendance WHERE roll=? AND date=? AND subject=?", (roll, date, subj))
+        if USE_POSTGRES:
+            c.execute("SELECT * FROM attendance WHERE roll=%s AND date=%s AND subject=%s", (roll, date, subj))
+        else:
+            c.execute("SELECT * FROM attendance WHERE roll=? AND date=? AND subject=?", (roll, date, subj))
     elif branch and 'branch' in cols:
-        c.execute("SELECT * FROM attendance WHERE roll=? AND date=? AND branch=?", (roll, date, branch))
+        if USE_POSTGRES:
+            c.execute("SELECT * FROM attendance WHERE roll=%s AND date=%s AND branch=%s", (roll, date, branch))
+        else:
+            c.execute("SELECT * FROM attendance WHERE roll=? AND date=? AND branch=?", (roll, date, branch))
     else:
-        c.execute("SELECT * FROM attendance WHERE roll=? AND date=?", (roll, date))
+        if USE_POSTGRES:
+            c.execute("SELECT * FROM attendance WHERE roll=%s AND date=%s", (roll, date))
+        else:
+            c.execute("SELECT * FROM attendance WHERE roll=? AND date=?", (roll, date))
     if c.fetchone():
         conn.close()
         return redirect(f"/admin?added=exists")
 
     # Insert including available columns
     if 'subject' in cols and 'branch' in cols:
-        c.execute("INSERT INTO attendance (roll, name, date, time, subject, branch) VALUES (?,?,?,?,?,?)",
-                  (roll, name, date, time, subj, branch))
+        if USE_POSTGRES:
+            c.execute("INSERT INTO attendance (roll, name, date, time, subject, branch) VALUES (%s,%s,%s,%s,%s,%s)",
+                      (roll, name, date, time, subj, branch))
+        else:
+            c.execute("INSERT INTO attendance (roll, name, date, time, subject, branch) VALUES (?,?,?,?,?,?)",
+                      (roll, name, date, time, subj, branch))
     elif 'subject' in cols:
-        c.execute("INSERT INTO attendance (roll, name, date, time, subject) VALUES (?,?,?,?,?)",
-                  (roll, name, date, time, subj))
+        if USE_POSTGRES:
+            c.execute("INSERT INTO attendance (roll, name, date, time, subject) VALUES (%s,%s,%s,%s,%s)",
+                      (roll, name, date, time, subj))
+        else:
+            c.execute("INSERT INTO attendance (roll, name, date, time, subject) VALUES (?,?,?,?,?)",
+                      (roll, name, date, time, subj))
     elif 'branch' in cols:
-        c.execute("INSERT INTO attendance (roll, name, date, time, branch) VALUES (?,?,?,?,?)",
-                  (roll, name, date, time, branch))
+        if USE_POSTGRES:
+            c.execute("INSERT INTO attendance (roll, name, date, time, branch) VALUES (%s,%s,%s,%s,%s)",
+                      (roll, name, date, time, branch))
+        else:
+            c.execute("INSERT INTO attendance (roll, name, date, time, branch) VALUES (?,?,?,?,?)",
+                      (roll, name, date, time, branch))
     else:
-        c.execute("INSERT INTO attendance (roll, name, date, time) VALUES (?,?,?,?)",
-                  (roll, name, date, time))
+        if USE_POSTGRES:
+            c.execute("INSERT INTO attendance (roll, name, date, time) VALUES (%s,%s,%s,%s)",
+                      (roll, name, date, time))
+        else:
+            c.execute("INSERT INTO attendance (roll, name, date, time) VALUES (?,?,?,?)",
+                      (roll, name, date, time))
     conn.commit()
     conn.close()
     return redirect(f"/admin?added=1")
@@ -508,9 +536,15 @@ def delete():
     conn = get_db_connection()
     c = conn.cursor()
     if subject:
-        c.execute("DELETE FROM attendance WHERE roll=? AND date=? AND time=? AND subject=?", (roll, date, time, subject))
+        if USE_POSTGRES:
+            c.execute("DELETE FROM attendance WHERE roll=%s AND date=%s AND time=%s AND subject=%s", (roll, date, time, subject))
+        else:
+            c.execute("DELETE FROM attendance WHERE roll=? AND date=? AND time=? AND subject=?", (roll, date, time, subject))
     else:
-        c.execute("DELETE FROM attendance WHERE roll=? AND date=? AND time=?", (roll, date, time))
+        if USE_POSTGRES:
+            c.execute("DELETE FROM attendance WHERE roll=%s AND date=%s AND time=%s", (roll, date, time))
+        else:
+            c.execute("DELETE FROM attendance WHERE roll=? AND date=? AND time=?", (roll, date, time))
     conn.commit()
     conn.close()
     # preserve subject filter when redirecting
@@ -528,41 +562,25 @@ def clear_all():
     conn = get_db_connection()
     c = conn.cursor()
     if subject and branch:
-        c.execute("SELECT * FROM attendance WHERE subject=? AND branch=?", (subject, branch))
+        if USE_POSTGRES:
+            c.execute("DELETE FROM attendance WHERE subject=%s AND branch=%s", (subject, branch))
+        else:
+            c.execute("DELETE FROM attendance WHERE subject=? AND branch=?", (subject, branch))
     elif subject:
-        c.execute("SELECT * FROM attendance WHERE subject=?", (subject,))
+        if USE_POSTGRES:
+            c.execute("DELETE FROM attendance WHERE subject=%s", (subject,))
+        else:
+            c.execute("DELETE FROM attendance WHERE subject=?", (subject,))
     elif branch:
-        c.execute("SELECT * FROM attendance WHERE branch=?", (branch,))
-    else:
-        c.execute("SELECT * FROM attendance")
-    data = c.fetchall()
-    backup_name = ''
-    if data:
-        os.makedirs(os.path.join("static","backups"), exist_ok=True)
-        backup_name = datetime.datetime.now().strftime(f"attendance_{subject}_{branch}_backup_%Y%m%d_%H%M%S.csv") if subject and branch else datetime.datetime.now().strftime(f"attendance_{subject or branch}_backup_%Y%m%d_%H%M%S.csv") if subject or branch else datetime.datetime.now().strftime("attendance_backup_%Y%m%d_%H%M%S.csv")
-        backup_path = os.path.join("static","backups", backup_name)
-        with open(backup_path, "w", newline='', encoding='utf-8') as f:
-            writer = csv.writer(f)
-            # include columns if present
-            if data and len(data[0]) > 4:
-                writer.writerow(["Roll", "Name", "Subject", "Date", "Time"])
-            else:
-                writer.writerow(["Roll", "Name", "Date", "Time"])
-            writer.writerows(data)
-    if subject and branch:
-        c.execute("DELETE FROM attendance WHERE subject=? AND branch=?", (subject, branch))
-    elif subject:
-        c.execute("DELETE FROM attendance WHERE subject=?", (subject,))
-    elif branch:
-        c.execute("DELETE FROM attendance WHERE branch=?", (branch,))
+        if USE_POSTGRES:
+            c.execute("DELETE FROM attendance WHERE branch=%s", (branch,))
+        else:
+            c.execute("DELETE FROM attendance WHERE branch=?", (branch,))
     else:
         c.execute("DELETE FROM attendance")
     conn.commit()
     conn.close()
-    if backup_name:
-        return redirect(f"/view?cleared=1&backup={urllib.parse.quote_plus(backup_name)}&sub={urllib.parse.quote_plus(subject)}&branch={urllib.parse.quote_plus(branch)}")
-    else:
-        return redirect(f"/view?cleared=2&sub={urllib.parse.quote_plus(subject)}&branch={urllib.parse.quote_plus(branch)}")
+    return redirect(f"/view?cleared=1&sub={urllib.parse.quote_plus(subject)}&branch={urllib.parse.quote_plus(branch)}")
 
 # ---------- EXPORT CSV ----------
 @app.route("/export")
@@ -574,11 +592,20 @@ def export():
     conn = get_db_connection()
     c = conn.cursor()
     if selected_subject and selected_branch:
-        c.execute("SELECT * FROM attendance WHERE subject=? AND branch=? ORDER BY date DESC, time DESC", (selected_subject, selected_branch))
+        if USE_POSTGRES:
+            c.execute("SELECT * FROM attendance WHERE subject=%s AND branch=%s ORDER BY date DESC, time DESC", (selected_subject, selected_branch))
+        else:
+            c.execute("SELECT * FROM attendance WHERE subject=? AND branch=? ORDER BY date DESC, time DESC", (selected_subject, selected_branch))
     elif selected_subject:
-        c.execute("SELECT * FROM attendance WHERE subject=? ORDER BY date DESC, time DESC", (selected_subject,))
+        if USE_POSTGRES:
+            c.execute("SELECT * FROM attendance WHERE subject=%s ORDER BY date DESC, time DESC", (selected_subject,))
+        else:
+            c.execute("SELECT * FROM attendance WHERE subject=? ORDER BY date DESC, time DESC", (selected_subject,))
     elif selected_branch:
-        c.execute("SELECT * FROM attendance WHERE branch=? ORDER BY date DESC, time DESC", (selected_branch,))
+        if USE_POSTGRES:
+            c.execute("SELECT * FROM attendance WHERE branch=%s ORDER BY date DESC, time DESC", (selected_branch,))
+        else:
+            c.execute("SELECT * FROM attendance WHERE branch=? ORDER BY date DESC, time DESC", (selected_branch,))
     else:
         c.execute("SELECT * FROM attendance ORDER BY date DESC, time DESC")
     data = c.fetchall()
