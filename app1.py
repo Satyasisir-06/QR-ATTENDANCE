@@ -266,13 +266,17 @@ def scan():
         c = conn.cursor()
 
         # Check for duplicate: based on available columns
+        cols = []
         if USE_POSTGRES:
-            # PostgreSQL doesn't have PRAGMA, check columns differently
+            # PostgreSQL - check columns differently
             c.execute("SELECT column_name FROM information_schema.columns WHERE table_name='attendance'")
             cols = [r[0] for r in c.fetchall()]
         else:
+            # SQLite - use PRAGMA
             c.execute("PRAGMA table_info(attendance)")
-        cols = [r[1] for r in c.fetchall()]
+            cols = [r[1] for r in c.fetchall()]
+        
+        # Check for duplicate attendance
         if subj and branch and 'subject' in cols and 'branch' in cols:
             c.execute("SELECT * FROM attendance WHERE roll=? AND date=? AND subject=? AND branch=?", (roll, date, subj, branch))
         elif subj and 'subject' in cols:
@@ -281,27 +285,34 @@ def scan():
             c.execute("SELECT * FROM attendance WHERE roll=? AND date=? AND branch=?", (roll, date, branch))
         else:
             c.execute("SELECT * FROM attendance WHERE roll=? AND date=?", (roll, date))
+        
         if c.fetchone():
             session[session_key] = True
             session.permanent = True
-            session.permanent = True
+            conn.close()
             return "Attendance Already Marked ⚠️"
 
         # Insert including available columns
-        if 'subject' in cols and 'branch' in cols:
-            c.execute("INSERT INTO attendance (roll, name, date, time, subject, branch) VALUES (?,?,?,?,?,?)",
-                      (roll, name, date, time, subj, branch))
-        elif 'subject' in cols:
-            c.execute("INSERT INTO attendance (roll, name, date, time, subject) VALUES (?,?,?,?,?)",
-                      (roll, name, date, time, subj))
-        elif 'branch' in cols:
-            c.execute("INSERT INTO attendance (roll, name, date, time, branch) VALUES (?,?,?,?,?)",
-                      (roll, name, date, time, branch))
-        else:
-            c.execute("INSERT INTO attendance (roll, name, date, time) VALUES (?,?,?,?)",
-                      (roll, name, date, time))
-        conn.commit()
-        conn.close()
+        try:
+            if 'subject' in cols and 'branch' in cols:
+                c.execute("INSERT INTO attendance (roll, name, date, time, subject, branch) VALUES (?,?,?,?,?,?)",
+                          (roll, name, date, time, subj, branch))
+            elif 'subject' in cols:
+                c.execute("INSERT INTO attendance (roll, name, date, time, subject) VALUES (?,?,?,?,?)",
+                          (roll, name, date, time, subj))
+            elif 'branch' in cols:
+                c.execute("INSERT INTO attendance (roll, name, date, time, branch) VALUES (?,?,?,?,?)",
+                          (roll, name, date, time, branch))
+            else:
+                c.execute("INSERT INTO attendance (roll, name, date, time) VALUES (?,?,?,?)",
+                          (roll, name, date, time))
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            conn.close()
+            return f"Error marking attendance: {str(e)}"
+        finally:
+            conn.close()
 
         session[session_key] = True
         session.permanent = True
