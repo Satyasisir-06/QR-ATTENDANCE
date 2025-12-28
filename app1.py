@@ -256,68 +256,98 @@ def scan():
         return "Attendance Already Marked for this Subject/Branch Today ⚠️"
 
     if request.method == "POST":
-        roll = request.form["roll"]
-        name = request.form["name"]
-        subj = request.args.get("sub") or request.form.get("subject") or None
-        branch = request.args.get("branch") or request.form.get("branch") or None
-        time = datetime.datetime.now().strftime("%H:%M:%S")
+        try:
+            roll = request.form.get("roll", "").strip()
+            name = request.form.get("name", "").strip()
+            
+            if not roll or not name:
+                return "Roll number and name are required ❌"
+            
+            subj = request.args.get("sub") or request.form.get("subject") or None
+            branch = request.args.get("branch") or request.form.get("branch") or None
+            time = datetime.datetime.now().strftime("%H:%M:%S")
 
-        conn = get_db_connection()
-        c = conn.cursor()
+            conn = get_db_connection()
+            c = conn.cursor()
 
-        # Check for duplicate: based on available columns
-        cols = []
-        if USE_POSTGRES:
-            # PostgreSQL - check columns differently
-            c.execute("SELECT column_name FROM information_schema.columns WHERE table_name='attendance'")
-            cols = [r[0] for r in c.fetchall()]
-        else:
-            # SQLite - use PRAGMA
-            c.execute("PRAGMA table_info(attendance)")
-            cols = [r[1] for r in c.fetchall()]
-        
-        # Check for duplicate attendance
-        if subj and branch and 'subject' in cols and 'branch' in cols:
-            c.execute("SELECT * FROM attendance WHERE roll=? AND date=? AND subject=? AND branch=?", (roll, date, subj, branch))
-        elif subj and 'subject' in cols:
-            c.execute("SELECT * FROM attendance WHERE roll=? AND date=? AND subject=?", (roll, date, subj))
-        elif branch and 'branch' in cols:
-            c.execute("SELECT * FROM attendance WHERE roll=? AND date=? AND branch=?", (roll, date, branch))
-        else:
-            c.execute("SELECT * FROM attendance WHERE roll=? AND date=?", (roll, date))
-        
-        if c.fetchone():
+            # Check for duplicate: based on available columns
+            cols = []
+            if USE_POSTGRES:
+                # PostgreSQL - check columns differently
+                c.execute("SELECT column_name FROM information_schema.columns WHERE table_name='attendance'")
+                cols = [r[0] for r in c.fetchall()]
+            else:
+                # SQLite - use PRAGMA
+                c.execute("PRAGMA table_info(attendance)")
+                cols = [r[1] for r in c.fetchall()]
+            
+            # Check for duplicate attendance
+            if subj and branch and 'subject' in cols and 'branch' in cols:
+                if USE_POSTGRES:
+                    c.execute("SELECT * FROM attendance WHERE roll=%s AND date=%s AND subject=%s AND branch=%s", (roll, date, subj, branch))
+                else:
+                    c.execute("SELECT * FROM attendance WHERE roll=? AND date=? AND subject=? AND branch=?", (roll, date, subj, branch))
+            elif subj and 'subject' in cols:
+                if USE_POSTGRES:
+                    c.execute("SELECT * FROM attendance WHERE roll=%s AND date=%s AND subject=%s", (roll, date, subj))
+                else:
+                    c.execute("SELECT * FROM attendance WHERE roll=? AND date=? AND subject=?", (roll, date, subj))
+            elif branch and 'branch' in cols:
+                if USE_POSTGRES:
+                    c.execute("SELECT * FROM attendance WHERE roll=%s AND date=%s AND branch=%s", (roll, date, branch))
+                else:
+                    c.execute("SELECT * FROM attendance WHERE roll=? AND date=? AND branch=?", (roll, date, branch))
+            else:
+                if USE_POSTGRES:
+                    c.execute("SELECT * FROM attendance WHERE roll=%s AND date=%s", (roll, date))
+                else:
+                    c.execute("SELECT * FROM attendance WHERE roll=? AND date=?", (roll, date))
+            
+            if c.fetchone():
+                session[session_key] = True
+                session.permanent = True
+                conn.close()
+                return "Attendance Already Marked ⚠️"
+
+            # Insert including available columns
+            if 'subject' in cols and 'branch' in cols:
+                if USE_POSTGRES:
+                    c.execute("INSERT INTO attendance (roll, name, date, time, subject, branch) VALUES (%s,%s,%s,%s,%s,%s)",
+                              (roll, name, date, time, subj, branch))
+                else:
+                    c.execute("INSERT INTO attendance (roll, name, date, time, subject, branch) VALUES (?,?,?,?,?,?)",
+                              (roll, name, date, time, subj, branch))
+            elif 'subject' in cols:
+                if USE_POSTGRES:
+                    c.execute("INSERT INTO attendance (roll, name, date, time, subject) VALUES (%s,%s,%s,%s,%s)",
+                              (roll, name, date, time, subj))
+                else:
+                    c.execute("INSERT INTO attendance (roll, name, date, time, subject) VALUES (?,?,?,?,?)",
+                              (roll, name, date, time, subj))
+            elif 'branch' in cols:
+                if USE_POSTGRES:
+                    c.execute("INSERT INTO attendance (roll, name, date, time, branch) VALUES (%s,%s,%s,%s,%s)",
+                              (roll, name, date, time, branch))
+                else:
+                    c.execute("INSERT INTO attendance (roll, name, date, time, branch) VALUES (?,?,?,?,?)",
+                              (roll, name, date, time, branch))
+            else:
+                if USE_POSTGRES:
+                    c.execute("INSERT INTO attendance (roll, name, date, time) VALUES (%s,%s,%s,%s)",
+                              (roll, name, date, time))
+                else:
+                    c.execute("INSERT INTO attendance (roll, name, date, time) VALUES (?,?,?,?)",
+                              (roll, name, date, time))
+            conn.commit()
+            conn.close()
+
             session[session_key] = True
             session.permanent = True
-            conn.close()
-            return "Attendance Already Marked ⚠️"
 
-        # Insert including available columns
-        try:
-            if 'subject' in cols and 'branch' in cols:
-                c.execute("INSERT INTO attendance (roll, name, date, time, subject, branch) VALUES (?,?,?,?,?,?)",
-                          (roll, name, date, time, subj, branch))
-            elif 'subject' in cols:
-                c.execute("INSERT INTO attendance (roll, name, date, time, subject) VALUES (?,?,?,?,?)",
-                          (roll, name, date, time, subj))
-            elif 'branch' in cols:
-                c.execute("INSERT INTO attendance (roll, name, date, time, branch) VALUES (?,?,?,?,?)",
-                          (roll, name, date, time, branch))
-            else:
-                c.execute("INSERT INTO attendance (roll, name, date, time) VALUES (?,?,?,?)",
-                          (roll, name, date, time))
-            conn.commit()
+            return render_template("success.html")
         except Exception as e:
-            conn.rollback()
-            conn.close()
-            return f"Error marking attendance: {str(e)}"
-        finally:
-            conn.close()
-
-        session[session_key] = True
-        session.permanent = True
-
-        return render_template("success.html")
+            print(f"Error in scan POST: {str(e)}")
+            return f"Error: {str(e)}"
 
     return render_template("scan.html")
 
