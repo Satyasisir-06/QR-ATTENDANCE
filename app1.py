@@ -15,6 +15,7 @@ app.permanent_session_lifetime = timedelta(days=1)
 USE_POSTGRES = os.environ.get("DATABASE_URL") is not None
 
 def log(msg: str):
+
     import sys
     try:
         print(msg, file=sys.stderr, flush=True)
@@ -208,10 +209,17 @@ def logout():
 @app.route("/debug-env")
 def debug_env():
     db_url = os.environ.get("DATABASE_URL", "NOT SET")
-    # Mask password for security
+    # Show host and port for debugging
     if db_url and db_url != "NOT SET":
-        masked = db_url.split("@")[0].split(":")[0:2]
-        db_url_display = f"{masked[0]}:***@..." if len(masked) > 1 else "MALFORMED"
+        try:
+            parts = db_url.split("@")
+            if len(parts) > 1:
+                host_part = parts[1].split("/")[0]  # Get host:port
+                db_url_display = f"postgresql://***:***@{host_part}"
+            else:
+                db_url_display = "MALFORMED"
+        except:
+            db_url_display = "ERROR_PARSING"
     else:
         db_url_display = "NOT SET"
     
