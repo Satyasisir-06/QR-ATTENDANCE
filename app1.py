@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, redirect, session, send_file
-import sqlite3, qrcode, datetime, csv, io, os
+import sqlite3, qrcode, datetime, csv, io, os, base64
 import urllib.parse
 from datetime import timedelta
 from dotenv import load_dotenv
@@ -223,15 +223,20 @@ def generate():
 
     qr_ok = False
     qr_error = None
+    qr_base64 = None
     try:
         img = qrcode.make(url)
-        img.save("static/qr.png")
+        # Save to bytes buffer instead of file (for Vercel compatibility)
+        img_buffer = io.BytesIO()
+        img.save(img_buffer, format='PNG')
+        img_buffer.seek(0)
+        qr_base64 = base64.b64encode(img_buffer.getvalue()).decode()
         qr_ok = True
     except Exception as e:
         qr_error = str(e)
         qr_ok = False
 
-    return render_template("admin.html", qr=qr_ok, expiry=expiry, subject=subject, branch=branch, expiry_ts=expiry_ts, qr_error=qr_error)
+    return render_template("admin.html", qr=qr_ok, expiry=expiry, subject=subject, branch=branch, expiry_ts=expiry_ts, qr_error=qr_error, qr_base64=qr_base64)
 
 # ---------- SCAN & MARK ----------
 @app.route("/scan", methods=["GET", "POST"])

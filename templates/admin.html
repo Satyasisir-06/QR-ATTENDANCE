@@ -208,7 +208,7 @@
 
         {% if qr %}
         <div class="qr-box">
-            <img src="{{ url_for('static', filename='qr.png') }}" alt="QR Code" class="qr-img">
+            <img src="data:image/png;base64,{{ qr_base64 }}" alt="QR Code" class="qr-img">
             <p class="expiry" id="countdown">Expires in <strong id="timer">2:00</strong></p>
             {% if subject %}
             <p class="expiry">Subject: <strong>{{ subject }}</strong></p>
