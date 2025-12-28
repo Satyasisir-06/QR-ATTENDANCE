@@ -388,6 +388,9 @@ def view():
     data = c.fetchall()
     conn.close()
 
+    # Debug: print data count
+    print(f"View route: Found {len(data)} records")
+
     cleared = request.args.get('cleared')
     backup = request.args.get('backup')
     added = request.args.get('added') or ''
