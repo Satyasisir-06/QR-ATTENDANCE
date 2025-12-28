@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Attendance Records</title>
+    <link rel="icon" type="image/png" href="/static/qr.png">
+    <link rel="stylesheet" href="/static/style.css">
+
+<div class="table-container">
+    <h2>Attendance Records</h2>
+
+    {% if cleared == '1' %}
+        <div class="notice success">All attendance records were cleared successfully. {% if backup %}Backup saved: <a href="/static/backups/{{ backup }}" target="_blank">{{ backup }}</a>{% endif %}</div>
+    {% elif cleared == '2' %}
+        <div class="notice warn">No attendance records to clear.</div>
+    {% endif %}
+
+    {% if added == '1' %}
+        <div class="notice success">✅ Attendance added successfully.</div>
+    {% elif added == 'exists' %}
+        <div class="notice warn">⚠️ Attendance already marked for this roll on that date.</div>
+    {% elif added == 'error' %}
+        <div class="notice warn">⚠️ Please provide both Roll and Name.</div>
+    {% endif %}
+
+    <div style="margin-bottom:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <form method="get" action="/view" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <select name="branch" id="branchFilter" class="subject-select" style="padding:6px 10px;font-size:13px;border-radius:4px;border:1px solid #ccc;width:110px;">
+                <option value="">Branch</option>
+                {% for b in branches %}
+                <option value="{{ b }}" {% if selected_branch==b %}selected{% endif %}>{{ b }}</option>
+                {% endfor %}
+            </select>
+            <input name="sub" id="subInput" value="{{ selected_subject }}" placeholder="Subject" style="padding:6px 10px;border-radius:4px;border:1px solid #ccc;width:110px;font-size:13px;" {% if not selected_branch %}disabled{% endif %}>
+            <input type="date" id="dateFilter" style="padding:6px 10px;border-radius:4px;border:1px solid #ccc;font-size:13px;width:140px;">
+            <input name="month" id="monthFilter" value="{{ selected_month }}" style="display:none;">
+            <input name="day" id="dayFilter" value="{{ selected_day }}" style="display:none;">
+            <input name="name" id="search" value="{{ selected_name }}" placeholder="Name" style="padding:6px 10px;border-radius:4px;border:1px solid #ccc;width:110px;font-size:13px;">
+            <button type="submit" class="action" style="padding:6px 14px;font-size:13px;border-radius:4px;">Filter</button>
+            {% if is_admin %}
+            <a class="action" href="/view" style="padding:6px 14px;text-decoration:none;font-size:13px;border-radius:4px;display:inline-block;text-align:center;">Clear</a>
+            {% endif %}
+        </form>
+
+        {% if is_admin %}
+        <div style="display:flex;gap:8px;">
+            {% if selected_subject or selected_branch %}
+            <a class="action" href="{{ url_for('export', sub=selected_subject, branch=selected_branch) }}" style="padding:6px 14px;text-decoration:none;font-size:13px;border-radius:4px;display:inline-block;text-align:center;" title="Export">Export</a>
+            {% else %}
+            <a class="action" href="{{ url_for('export') }}" style="padding:6px 14px;text-decoration:none;font-size:13px;border-radius:4px;display:inline-block;text-align:center;" title="Export">Export</a>
+            {% endif %}
+
+            <form method="post" action="/clear_all" onsubmit="return confirm('Delete all records for selected filters?');" style="display:inline-block;">
+                {% if selected_subject %}
+                <input type="hidden" name="subject" value="{{ selected_subject }}">
+                {% endif %}
+                {% if selected_branch %}
+                <input type="hidden" name="branch" value="{{ selected_branch }}">
+                {% endif %}
+                <button type="submit" class="clear-btn" style="padding:6px 14px;font-size:13px;border-radius:4px;" title="Delete">Delete</button>
+            </form>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="table-wrapper">
+    <table class="attendance-table" width="100%">
+        <thead>
+        <tr>
+            <th>Roll</th>
+            <th>Name</th>
+            <th>Subject</th>
+            <th>Branch</th>
+            <th>Date</th>
+            <th>Time</th>
+            {% if is_admin %}
+            <th>Action</th>
+            {% endif %}
+        </tr>
+        </thead>
+        <tbody>
+        {% for row in data %}
+        <tr>
+            <td>{{ row[0] }}</td>
+            <td>{{ row[1] }}</td>
+            <td>{{ row[4] if row|length > 4 else '' }}</td>
+            <td>{{ row[5] if row|length > 5 else '' }}</td>
+            <td>{{ row[2] }}</td>
+            <td>{{ row[3] }}</td>
+            {% if is_admin %}
+            {% if row|length > 4 and row[4] %}
+            <td><a href="{{ url_for('delete', roll=row[0], date=row[2], time=row[3], subject=row[4]) }}" onclick="return confirm('Delete attendance for {{ row[0] }} on {{ row[2] }} at {{ row[3] }} ({{ row[4] }})?');" class="delete-btn">Delete</a></td>
+            {% else %}
+            <td><a href="{{ url_for('delete', roll=row[0], date=row[2], time=row[3]) }}" onclick="return confirm('Delete attendance for {{ row[0] }} on {{ row[2] }} at {{ row[3] }}?');" class="delete-btn">Delete</a></td>
+            {% endif %}
+            {% endif %}
+        </tr>
+        {% else %}
+        <tr>
+            <td colspan="6">No attendance records found.</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</div>
+
+<script>
+document.getElementById('search').addEventListener('input', function(e){
+    const q=e.target.value.toLowerCase();
+    document.querySelectorAll('.attendance-table tbody tr').forEach(function(row){
+        const text = row.textContent.toLowerCase();
+        row.style.display = text.indexOf(q) > -1 ? '' : 'none';
+    });
+});
+
+// Enable subject input only when branch is selected
+const branchFilter = document.getElementById('branchFilter');
+const subInput = document.getElementById('subInput');
+if(branchFilter && subInput){
+    branchFilter.addEventListener('change', function(){
+        if(this.value){
+            subInput.removeAttribute('disabled');
+        } else {
+            subInput.value = '';
+            subInput.setAttribute('disabled','disabled');
+        }
+    });
+}
+
+// Date picker to month/day converter
+const dateFilter = document.getElementById('dateFilter');
+const monthFilter = document.getElementById('monthFilter');
+const dayFilter = document.getElementById('dayFilter');
+
+if(dateFilter && monthFilter && dayFilter){
+    dateFilter.addEventListener('change', function(){
+        if(this.value){
+            const date = new Date(this.value);
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            monthFilter.value = month;
+            dayFilter.value = day;
+        } else {
+            monthFilter.value = '';
+            dayFilter.value = '';
+        }
+    });
+    
+    // Set date picker if month/day are present
+    if(monthFilter.value && dayFilter.value){
+        const year = new Date().getFullYear();
+        dateFilter.value = `${year}-${monthFilter.value}-${dayFilter.value}`;
+    }
+}
+
+// Manual add form toggle and defaults - removed as feature moved to admin dashboard
+</script>
