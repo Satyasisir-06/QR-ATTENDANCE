@@ -250,7 +250,10 @@ def scan():
             
             subj = request.args.get("sub") or request.form.get("subject") or None
             branch = request.args.get("branch") or request.form.get("branch") or None
-            time = datetime.datetime.now().strftime("%H:%M:%S")
+            
+            # Use client's local time and date if provided, otherwise use server time
+            time = request.form.get("local_time") or datetime.datetime.now().strftime("%H:%M:%S")
+            date = request.form.get("local_date") or datetime.date.today().isoformat()
 
             conn = get_db_connection()
             c = conn.cursor()
