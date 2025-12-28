@@ -117,15 +117,6 @@ try:
     init_db()
 except Exception as e:
     print(f"Database initialization warning: {e}")
-    # Continue anyway - might succeed on first request
-
-@app.before_request
-def ensure_db():
-    """Ensure database is initialized on each request"""
-    try:
-        init_db()
-    except Exception:
-        pass
 
 # ---------- LOGIN ----------
 @app.route("/", methods=["GET", "POST"])
