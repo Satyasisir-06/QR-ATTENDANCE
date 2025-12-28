@@ -14,11 +14,20 @@ app.permanent_session_lifetime = timedelta(days=1)
 # Database configuration
 USE_POSTGRES = os.environ.get("DATABASE_URL") is not None
 
+def log(msg: str):
+    import sys
+    try:
+        print(msg, file=sys.stderr, flush=True)
+        print(msg, flush=True)
+    except Exception:
+        pass
+
 def get_db_connection():
     """Get database connection based on environment"""
     if USE_POSTGRES:
         try:
             import psycopg2
+            log("DB: connecting to Postgres via DATABASE_URL")
             return psycopg2.connect(os.environ.get("DATABASE_URL"))
         except Exception as e:
             print(f"PostgreSQL connection error: {e}")
@@ -26,6 +35,7 @@ def get_db_connection():
     else:
         # For local development, use /tmp or current directory
         db_path = "/tmp/attendance.db" if os.path.exists("/tmp") else "attendance.db"
+        log(f"DB: using SQLite at {db_path}")
         return sqlite3.connect(db_path)
 
 # ---------- DATABASE SETUP ----------
@@ -114,9 +124,13 @@ def init_db():
 
 # Initialize database only if not in production or on first run
 try:
+    log(f"INIT: Starting init_db, USE_POSTGRES={USE_POSTGRES}, DATABASE_URL={'SET' if os.environ.get('DATABASE_URL') else 'NOT SET'}")
     init_db()
+    log("INIT: init_db completed successfully")
 except Exception as e:
-    print(f"Database initialization warning: {e}")
+    log(f"INIT ERROR: {e}")
+    import traceback
+    log(f"INIT TRACEBACK: {traceback.format_exc()}")
 
 # ---------- LOGIN ----------
 @app.route("/", methods=["GET", "POST"])
@@ -255,6 +269,7 @@ def scan():
             time = request.form.get("local_time") or datetime.datetime.now().strftime("%H:%M:%S")
             date = request.form.get("local_date") or datetime.date.today().isoformat()
 
+            log(f"SCAN POST: roll={roll}, name={name}, subj={subj}, branch={branch}, date={date}, time={time}, USE_POSTGRES={USE_POSTGRES}")
             conn = get_db_connection()
             c = conn.cursor()
 
@@ -327,6 +342,7 @@ def scan():
                     c.execute("INSERT INTO attendance (roll, name, date, time) VALUES (?,?,?,?)",
                               (roll, name, date, time))
             conn.commit()
+            log("SCAN POST: insert committed successfully")
             conn.close()
 
             session[session_key] = True
