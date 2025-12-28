@@ -204,6 +204,25 @@ def logout():
     session.clear()
     return redirect("/")
 
+# DEBUG endpoint - remove after fixing
+@app.route("/debug-env")
+def debug_env():
+    db_url = os.environ.get("DATABASE_URL", "NOT SET")
+    # Mask password for security
+    if db_url and db_url != "NOT SET":
+        masked = db_url.split("@")[0].split(":")[0:2]
+        db_url_display = f"{masked[0]}:***@..." if len(masked) > 1 else "MALFORMED"
+    else:
+        db_url_display = "NOT SET"
+    
+    return f"""
+    <h2>Environment Debug</h2>
+    <p>USE_POSTGRES: {USE_POSTGRES}</p>
+    <p>DATABASE_URL: {db_url_display}</p>
+    <p>SECRET_KEY: {'SET' if os.environ.get('SECRET_KEY') else 'NOT SET'}</p>
+    <p>SUPABASE_URL: {os.environ.get('SUPABASE_URL', 'NOT SET')}</p>
+    """
+
 # ---------- GENERATE QR ----------
 @app.route("/generate")
 def generate():
