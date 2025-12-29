@@ -209,24 +209,11 @@ def logout():
 @app.route("/debug-env")
 def debug_env():
     db_url = os.environ.get("DATABASE_URL", "NOT SET")
-    # Show host and port for debugging
-    if db_url and db_url != "NOT SET":
-        try:
-            parts = db_url.split("@")
-            if len(parts) > 1:
-                host_part = parts[1].split("/")[0]  # Get host:port
-                db_url_display = f"postgresql://***:***@{host_part}"
-            else:
-                db_url_display = "MALFORMED"
-        except:
-            db_url_display = "ERROR_PARSING"
-    else:
-        db_url_display = "NOT SET"
     
     return f"""
     <h2>Environment Debug</h2>
     <p>USE_POSTGRES: {USE_POSTGRES}</p>
-    <p>DATABASE_URL: {db_url_display}</p>
+    <p>DATABASE_URL: {db_url[:80] if db_url else 'NOT SET'}...</p>
     <p>SECRET_KEY: {'SET' if os.environ.get('SECRET_KEY') else 'NOT SET'}</p>
     <p>SUPABASE_URL: {os.environ.get('SUPABASE_URL', 'NOT SET')}</p>
     """
